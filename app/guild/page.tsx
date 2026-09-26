@@ -107,7 +107,10 @@ export default function GuildDashboard() {
     const url = canvas.toDataURL("image/png");
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${certificateId}.png`;
+    
+    const fullName = [formData.firstName, formData.middleName, formData.familyName].filter(Boolean).join(" ");
+    link.download = `${fullName || certificateId}.png`;
+    
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
