@@ -1,11 +1,47 @@
 "use server";
 
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createClient } from "@supabase/supabase-js";
+
+export async function getPresignedUrl(fileName: string, fileType: string, genId: string) {
+  const accountId = process.env.R2_ACCOUNT_ID;
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+  const publicUrl = process.env.R2_PUBLIC_URL;
+
+  if (!accountId || !accessKeyId || !secretAccessKey || !publicUrl) {
+    throw new Error("Cloudflare R2 credentials are not configured in environment variables.");
+  }
+
+  const s3 = new S3Client({
+    region: "auto",
+    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId,
+      secretAccessKey,
+    },
+  });
+
+  const fileExtension = fileName.split('.').pop() || 'png';
+  const newFileName = `${genId}-${Date.now()}.${fileExtension}`;
+
+  const command = new PutObjectCommand({
+    Bucket: "certificates",
+    Key: newFileName,
+    ContentType: fileType,
+  });
+
+  const url = await getSignedUrl(s3, command, { expiresIn: 3600 });
+  const imageUrl = `${publicUrl.replace(/\/$/, '')}/${newFileName}`;
+
+  return { url, imageUrl };
+}
 
 export async function submitCertificate(formData: FormData) {
   try {
     const file = formData.get("file") as File | null;
+    const clientImageUrl = formData.get("imageUrl") as string | null;
     const genId = formData.get("genId") as string;
     const firstName = formData.get("firstName") as string;
     const middleName = formData.get("middleName") as string;
@@ -19,10 +55,10 @@ export async function submitCertificate(formData: FormData) {
       throw new Error("Missing required fields");
     }
 
-    let imageUrl = null;
+    let imageUrl = clientImageUrl || null;
 
-    // 1. Upload to Cloudflare R2 if a file is provided
-    if (file && file.size > 0) {
+    // 1. Upload to Cloudflare R2 if a file is provided (fallback for small files)
+    if (file && file.size > 0 && !clientImageUrl) {
       const accountId = process.env.R2_ACCOUNT_ID;
       const accessKeyId = process.env.R2_ACCESS_KEY_ID;
       const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;

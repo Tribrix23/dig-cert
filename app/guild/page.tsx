@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useState } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 import Folder from "@/components/Folder";
-import { submitCertificate } from "@/app/actions/uploadCertificate";
+import { submitCertificate, getPresignedUrl } from "@/app/actions/uploadCertificate";
 import { 
   Bell, 
   Menu,
@@ -138,8 +138,33 @@ export default function GuildDashboard() {
     fd.append("year", formData.year);
     fd.append("type", formData.type);
     
+    let clientImageUrl = null;
     if (uploadedFile) {
-      fd.append("file", uploadedFile);
+      try {
+        const { url, imageUrl } = await getPresignedUrl(uploadedFile.name, uploadedFile.type, certificateId);
+        
+        // Upload directly to R2 bypassing Vercel body limits
+        const uploadRes = await fetch(url, {
+          method: "PUT",
+          body: uploadedFile,
+          headers: {
+            "Content-Type": uploadedFile.type,
+          },
+        });
+        
+        if (!uploadRes.ok) {
+          throw new Error("Failed to upload image to storage");
+        }
+        clientImageUrl = imageUrl;
+      } catch (err: any) {
+        setSubmitMessage({ type: 'error', text: err.message || 'Storage upload failed' });
+        setIsSubmitting(false);
+        return;
+      }
+    }
+    
+    if (clientImageUrl) {
+      fd.append("imageUrl", clientImageUrl);
     }
 
     try {
